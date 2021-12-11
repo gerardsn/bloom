@@ -12,7 +12,7 @@ func BenchmarkFilter_Add(b *testing.B) {
 
 	// benchmark loop
 	for n := 0; n < b.N; n++ {
-		nCollisions, firstCollision = benchmarkAdd(&filter, n, numEntries)
+		nCollisions, firstCollision = benchmarkAdd(filter, n, numEntries)
 	}
 
 	b.Logf("Filtersize: %d bits, hashes: %d\n", len(filter.fingerprint)*8, len(filter.seeds))
@@ -21,6 +21,34 @@ func BenchmarkFilter_Add(b *testing.B) {
 	statistics(firstCollision, b)
 	b.Logf("Average collisions for %d entries - ", numEntries)
 	statistics(nCollisions, b)
+}
+
+func benchmarkAdd(f Filter, nEval, maxEntries int) (nCollisions []int, firstCollision []int) {
+	nCollisions = make([]int, nEval)
+	firstCollision = make([]int, nEval)
+	for i := 0; i < nEval; i++ {
+		nCollisions[i] = countCollisions(f.clone(), maxEntries)
+		firstCollision[i] = addUntilCollision(f.clone())
+	}
+	return
+}
+
+func countCollisions(filter Filter, numEntries int) int {
+	nCollisions := 0
+	for n := 0; n < numEntries; n++ {
+		if !filter.Add(generateData()) {
+			nCollisions++
+		}
+	}
+	return nCollisions
+}
+
+func addUntilCollision(filter Filter) int {
+	for totalElem := 0; ; totalElem++ {
+		if !filter.Add(generateData()) {
+			return totalElem
+		}
+	}
 }
 
 func TestFilter_Add(t *testing.T) {

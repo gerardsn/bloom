@@ -6,16 +6,6 @@ import (
 	"testing"
 )
 
-func benchmarkAdd(f Bloom, nEval, maxEntries int) (nCollisions []int, firstCollision []int) {
-	nCollisions = make([]int, nEval)
-	firstCollision = make([]int, nEval)
-	for i := 0; i < nEval; i++ {
-		nCollisions[i] = countCollisions(f.clone(), maxEntries)
-		firstCollision[i] = addUntilCollision(f.clone())
-	}
-	return
-}
-
 func statistics(values []int, b *testing.B) (mean float64, std float64, min int, max int) {
 	sum := 0
 	min = math.MaxInt
@@ -41,26 +31,8 @@ func statistics(values []int, b *testing.B) (mean float64, std float64, min int,
 	return
 }
 
-func countCollisions(filter Bloom, numEntries int) int {
-	nCollisions := 0
-	for n := 0; n < numEntries; n++ {
-		if !filter.Add(generateData()) {
-			nCollisions++
-		}
-	}
-	return nCollisions
-}
-
-func addUntilCollision(filter Bloom) int {
-	for totalElem := 0; ; totalElem++ {
-		if !filter.Add(generateData()) {
-			return totalElem
-		}
-	}
-}
-
 func generateData() []byte {
-	bytes := make([]byte, KeyLength) // Tx ids use 256-bit hashes
+	bytes := make([]byte, keyLength) // Tx ids use 256-bit hashes
 	if _, err := rand.Read(bytes); err != nil {
 		panic(err)
 	}

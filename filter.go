@@ -39,10 +39,10 @@ func NewFilter1024() Filter {
 	}
 }
 
-func (f *Filter) clone() Bloom {
+func (f *Filter) clone() Filter {
 	seeds := make([]uint32, len(f.seeds))
 	copy(seeds, f.seeds)
-	return &Filter{
+	return Filter{
 		fingerprint: make([]byte, len(f.fingerprint)),
 		seeds:       seeds,
 	}

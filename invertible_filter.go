@@ -7,22 +7,32 @@ import (
 	"github.com/spaolacci/murmur3"
 )
 
+const (
+	keyLength = 32
+)
+
+/*
+Implementation of an Invertible Bloom Filter, which is the special case of an IBLT where the key-value pair consist of a key-hash(key) pair.
+The hash(key) value ensures correct decoding after subtraction of two IBLTs.
+Goodrich, Michael T., and Michael Mitzenmacher. "Invertible bloom lookup tables." http://arxiv.org/pdf/1101.2245
+Eppstein, David, et al. "What's the difference?: efficient set reconciliation without prior context." http://conferences.sigcomm.org/sigcomm/2011/papers/sigcomm/p218.pdf
+*/
+
 type ibf struct {
-	Buckets    []*bucket `json:"Buckets"`
-	NumBuckets int       `json:"num_buckets"`
-	K          int       `json:"K"`
-	KeySeed    uint32    `json:"key_seed"`
-	KeyLength  int       `json:"key_length"`
+	Buckets   []*bucket `json:"Buckets"`
+	K         int       `json:"K"`
+	Seed      uint32    `json:"seed"`
+	KeyLength int       `json:"key_length"`
 }
 
 func (i *ibf) String() string {
 	out := fmt.Sprintf("IBF\n"+
-		"number of buckets: %d\n"+
-		"indexing seeds: %v\n"+
+		"buckets: %d\n"+
+		"k: %v\n"+
 		"key seed: %d\n"+
 		"key length (B): %d\n"+
 		"\tbucket count keySum           hashSum\n",
-		i.NumBuckets, i.K, i.KeySeed, i.KeyLength)
+		len(i.Buckets), i.K, i.Seed, i.KeyLength)
 	for idx, b := range i.Buckets {
 		out += fmt.Sprintf("\t%6d %5d %x %10d\n", idx, b.count, b.keySum, b.hashSum)
 	}
@@ -32,14 +42,13 @@ func (i *ibf) String() string {
 func NewIbf(numBuckets int) *ibf {
 	buckets := make([]*bucket, numBuckets)
 	for i := 0; i < numBuckets; i++ {
-		buckets[i] = newBucket(KeyLength)
+		buckets[i] = newBucket(keyLength)
 	}
 	return &ibf{
-		Buckets:    buckets,
-		K:          4,
-		KeySeed:    uint32(33),
-		KeyLength:  KeyLength,
-		NumBuckets: numBuckets,
+		Buckets:   buckets,
+		K:         4,
+		Seed:      uint32(33),
+		KeyLength: keyLength,
 	}
 }
 
@@ -85,14 +94,14 @@ func (i *ibf) Subtract(other *ibf) error {
 }
 
 func (i *ibf) validateSubtrahend(o *ibf) error {
-	if i.NumBuckets != o.NumBuckets {
-		return fmt.Errorf("unequal number of Buckets, expected (%d) got (%d)", i.NumBuckets, o.NumBuckets)
+	if len(i.Buckets) != len(o.Buckets) {
+		return fmt.Errorf("unequal number of Buckets, expected (%d) got (%d)", len(i.Buckets), len(o.Buckets))
 	}
-	if i.KeySeed != o.KeySeed {
-		return fmt.Errorf("keySeeds do not match, expected (%d) got (%d)", i.KeySeed, o.KeySeed)
+	if i.Seed != o.Seed {
+		return fmt.Errorf("keySeeds do not match, expected (%d) got (%d)", i.Seed, o.Seed)
 	}
 	if i.KeyLength != o.KeyLength {
-		return fmt.Errorf("keyLengths do not match, expected (%d) got (%d)", i.KeySeed, o.KeySeed)
+		return fmt.Errorf("keyLengths do not match, expected (%d) got (%d)", i.Seed, o.Seed)
 	}
 	if i.K != o.K {
 		return fmt.Errorf("unequal number of K, expected (%d) got (%d)", i.K, o.K)
@@ -131,23 +140,22 @@ func (i *ibf) Decode() (remaining [][]byte, missing [][]byte, err error) {
 }
 
 func (i *ibf) bucketIndices(hash uint64) []uint64 {
-	rng := xorshift64{state: hash}
 	bucketUsed := make(map[uint64]bool, i.K)
 	var indices []uint64
+	next := xorshift64(hash)
 	for len(indices) < i.K {
-		next := rng.next()
-		minBucket := next % uint64(MinBuckets)
-		if bucketUsed[minBucket] {
-			continue
+		bucketId := next % uint64(len(i.Buckets))
+		if !bucketUsed[bucketId] {
+			indices = append(indices, bucketId)
+			bucketUsed[bucketId] = true
 		}
-		indices = append(indices, next % uint64(i.NumBuckets))
-		bucketUsed[minBucket] = true
+		next = xorshift64(next)
 	}
 	return indices
 }
 
 func (i *ibf) hashKey(key []byte) uint64 {
-	return murmur3.Sum64WithSeed(key, i.KeySeed)
+	return murmur3.Sum64WithSeed(key, i.Seed)
 }
 
 // bucket
@@ -187,7 +195,7 @@ func (b *bucket) update(key []byte, hash uint64) {
 }
 
 func (b *bucket) isEmpty() bool {
-	return b.count == 0 && b.hashSum == 0 && eq(b.keySum, make([]byte, KeyLength))
+	return b.count == 0 && b.hashSum == 0 && eq(b.keySum, make([]byte, len(b.keySum)))
 }
 
 func (b *bucket) String() string {
@@ -195,14 +203,12 @@ func (b *bucket) String() string {
 }
 
 // xorshift64 is am RNG form the xorshift family with period 2^64-1.
-type xorshift64 struct {
-	state uint64
-}
-
-// next number in the RNG sequence.
-func (x *xorshift64) next() uint64 {
-	x.state ^= x.state << 13
-	x.state ^= x.state >> 7
-	x.state ^= x.state << 17
-	return x.state
+func xorshift64(s uint64) uint64 {
+	if s == 0 { // xorshift64(0) == 0
+		s++
+	}
+	s ^= s << 13
+	s ^= s >> 7
+	s ^= s << 17
+	return s
 }
